@@ -1,0 +1,20 @@
+[default]
+# Optional: Slack channel ID for notifications (falls back to yt_ingest_slack_channel_id if not provided)
+subreddit_snapshot_slack_channel_id = "C09RJJDCHBM"
+
+# Number of subreddits per batch for static batch generation
+subreddit_batch_size = 10
+
+# Path to store subreddit batch configuration JSON
+subreddit_batch_file = "@jinja {{this.base_data_path}}/subreddit_batches.json"
+
+# lock file to prevent race conditions on batch file
+subreddit_lock_file = "@jinja {{this.base_data_path}}/subreddit_batches.lock"
+
+# Pipeline metadata
+snapshot_pipeline_enabled = true
+snapshot_pipeline_name = "subreddit_snapshot_pipeline"
+
+# Logging and runtime
+log_level = "INFO"
+log_prefix = "[SubredditSnapshot]"

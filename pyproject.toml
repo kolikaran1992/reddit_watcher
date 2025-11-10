@@ -11,6 +11,7 @@ dependencies = [
   "praw (>=7.8.1,<8.0.0)",
   "pandas (>=2.3.3,<3.0.0)",
   "meter-call @ git+ssh://git@github.com/kolikaran1992/meter_call.git",
+  "asyncpraw (>=7.8.1,<8.0.0)",
 ]
 description = ""
 name = "reddit-watcher"

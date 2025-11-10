@@ -1,2 +1,5 @@
 [default]
 DB_FILE = '@jinja {{this.base_data_path}}/local_database.db'
+
+[test]
+DB_FILE = '@jinja {{this.base_data_path}}/local_database__test.db'
