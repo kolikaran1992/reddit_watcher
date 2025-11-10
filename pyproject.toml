@@ -1,0 +1,27 @@
+[project]
+authors = [
+  {name = "kolikaran"},
+]
+dependencies = [
+  "dynaconf (>=3.2.12,<4.0.0)",
+  "jinja2 (>=3.1.6,<4.0.0)",
+  "pytz (>=2025.2,<2026.0)",
+  "pytest (>=8.4.2,<9.0.0)",
+  "sqlalchemy (>=2.0.44,<3.0.0)",
+  "praw (>=7.8.1,<8.0.0)",
+  "pandas (>=2.3.3,<3.0.0)",
+  "meter-call @ git+ssh://git@github.com/kolikaran1992/meter_call.git",
+]
+description = ""
+name = "reddit-watcher"
+readme = "README.md"
+requires-python = ">=3.10,<4.0"
+version = "0.1.0"
+
+[build-system]
+build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+
+[tool.poetry.group.dev.dependencies]
+black = "^25.9.0"
+isort = "^7.0.0"

@@ -1,0 +1,6 @@
+[default]
+base_data_path = '@jinja {{this.home_dir}}/Data/REDDIT_WATCHER'
+logger_name = "reddit_watcher"
+now_iso = "@jinja {{this._get_now_iso(this.tz)}}"
+start_ts = "@jinja {{this._get_start_ts(this.tz)}}"
+tz = "UTC"

@@ -1,0 +1,10 @@
+[default]
+base_youtube_watcher_directory = '/home/limited_user/Projects/youtube_summarizer_working/youtube_collector/tmp/queue/geetamaansingh_queue'
+kw_extraction_model_name = "groq/openai/gpt-oss-120b"
+max_subreddits_to_fetch = 20
+video_processing_batch_size = 1
+yt_ingest_slack_channel_id = 'C09RJJDCHBM'
+
+[cron]
+base_youtube_watcher_directory = '/home/limited_user/Data/youtube_scraper/queue/geetamaansingh_queue'
+video_processing_batch_size = 1
