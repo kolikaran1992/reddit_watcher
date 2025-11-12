@@ -26,6 +26,16 @@
 | **settings.toml** | Global defaults | `base_data_path`, `logger_name`, `tz`, runtime timestamps |
 | **database.toml** | Database config | `DB_FILE` path for SQLite |
 | **youtube_watcher.toml** | YouTube & LLM ingestion | `kw_extraction_model_name`, `max_subreddits_to_fetch`, `yt_ingest_slack_channel_id` |
+| **subreddit_snapshot.toml** | Subreddit snapshot pipeline config | `subreddit_batch_size`, `subreddit_batch_file`, `subreddit_lock_file`, `subreddit_snapshot_slack_channel_id` |
+
+---
+
+### 🕒 Crons/
+| File | Purpose | Key Components |
+|------|----------|----------------|
+| **subreddit_snapshot_pipeline.py** | Async Reddit snapshot pipeline using asyncpraw. Collects subreddit post snapshots in batches with rate limiting and Slack reporting. | Uses `AsyncRateLimiter`, `AsyncSubredditCollector`, `ExclusiveFileLock`, `DBManager`. |
+| **video_ingestion_pipeline.py** | Video-to-subreddit marketing pipeline. Extracts keywords via LLM, finds relevant subreddits, and maps videos using ORM models. | Uses `SubredditCollector`, `SimpleXMLParser`, `LLMFallbackCaller`, `DBManager`, Slack notifications. |
+| **subreddit_meta_update_pipeline.py** | Async cron that refreshes `SubredditMeta` data for all tracked subreddits with rate limiting and DB upserts. | Uses `AsyncRateLimiter`, `DBManager`, `reddit_api`, `SubredditMeta` ORM. |
 
 ---
 
@@ -35,6 +45,14 @@
 - **Persistence:** SQLAlchemy ORM with consistent model hierarchy and session manager.  
 - **External I/O:** Reddit API (via PRAW), Slack Web API for alerts, regex-based XML parsing for feeds.  
 - **Design Pattern:** Separation of concerns; composable utilities for automation and cron-based ingestion.
+
+---
+
+### 🛠 Utilities
+| File | Purpose | Key Features |
+|------|----------|---------------|
+| **file_lock.py** | Provides an exclusive file lock context manager for preventing concurrent access to shared resources. | Uses `fcntl` for process-safe locking with optional fail-fast exit. |
+| **rate_limiter.py** | Async token-bucket based rate limiter for controlling API request rates. | Supports strict/smooth modes; integrates with async tasks in Reddit collectors. |
 
 ---
 

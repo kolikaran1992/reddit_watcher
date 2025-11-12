@@ -1,0 +1,11 @@
+[default]
+subreddit_meta_batch_size = 5
+subreddit_meta_concurrency = 2
+subreddit_meta_lock_file = '@jinja {{this.base_data_path}}/subreddit_meta.lock'
+subreddit_meta_rate_limit_calls = 10
+subreddit_meta_rate_limit_period = 60
+
+[cron]
+subreddit_meta_batch_size = 40
+subreddit_meta_rate_limit_calls = 2
+subreddit_meta_rate_limit_period = 60

@@ -109,3 +109,40 @@ class VideoSubredditMap(Base):
     __table_args__ = (
         UniqueConstraint("video_id", "subreddit_id", name="uq_video_sub_map"),
     )
+
+
+class VideoSubredditAssessment(Base):
+    """
+    Stores detailed marketing assessment results for a specific video-subreddit pair.
+    Extracted from the XML structure produced by the Reddit marketing assessment pipeline.
+    """
+
+    __tablename__ = "video_subreddit_assessments"
+
+    id = Column(Integer, primary_key=True)
+
+    # Core relationships
+    video_id = Column(String, nullable=False, index=True)
+    subreddit_id = Column(Integer, ForeignKey("subreddits.id"), nullable=False)
+
+    # Extracted tags from the <reddit_marketing_assessment> XML
+    is_marketable = Column(String, nullable=True)  # e.g. "yes" / "no"
+    relevance_level = Column(String, nullable=True)  # e.g. "high" / "moderate" / "none"
+    complexity_level = Column(
+        String, nullable=True
+    )  # e.g. "simple" / "moderate" / "difficult"
+
+    posting_requirements = Column(Text, nullable=True)
+    recommended_post_format = Column(Text, nullable=True)
+    reasoning = Column(Text, nullable=True)
+    risk_of_ban = Column(String, nullable=True)  # e.g. "low" / "medium" / "high"
+    additional_notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=now)
+
+    # Relationships
+    subreddit = relationship("Subreddit")
+
+    __table_args__ = (
+        UniqueConstraint("video_id", "subreddit_id", name="uq_video_sub_assessment"),
+    )

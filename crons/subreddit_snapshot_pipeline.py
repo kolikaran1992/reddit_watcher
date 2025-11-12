@@ -1,6 +1,7 @@
 import sys
 import json
 import asyncio
+import math
 from datetime import datetime
 from pathlib import Path
 
@@ -11,7 +12,11 @@ from reddit_watcher.reddit_api import (
     sanitize_subreddit_name,
 )  # now asyncpraw
 from reddit_watcher.database.manager import DBManager
-from reddit_watcher.database.models import SubredditTopNewPostsSnapshot, Subreddit
+from reddit_watcher.database.models import (
+    SubredditTopNewPostsSnapshot,
+    Subreddit,
+    VideoSubredditAssessment,
+)
 from reddit_watcher.collector import AsyncSubredditCollector  # async collector
 from reddit_watcher.omniconf import config, logger
 from reddit_watcher.slack_messenger import send_slack_message as send_slack_message_base
@@ -20,6 +25,7 @@ from reddit_watcher.rate_limiter import AsyncRateLimiter
 
 BATCH_FILE = Path(config.subreddit_batch_file)
 LOCK_FILE = Path(config.subreddit_lock_file)
+BATCH_SIZE = config.subreddit_batch_size
 
 # Ensure directories exist
 BATCH_FILE.parent.mkdir(exist_ok=True, parents=True)
@@ -35,11 +41,54 @@ START_TIME = now()
 
 def send_slack_message(message: str) -> None:
     send_slack_message_base(
-        message,
+        message + f"\n\nlogfile: `/tmp/sub_snapshot.cron.log`\n",
         slack_channel_id=getattr(config, "subreddit_snapshot_slack_channel_id", None)
         or config.yt_ingest_slack_channel_id,
         header="Reddit: Subreddit Snapshot",
     )
+
+
+# Batch generation if not already exists
+
+
+def generate_subreddit_batches():
+    logger.info("📦 Generating subreddit batches snapshot")
+
+    db = DBManager()
+    # marketable_subreddit_ids = db.session.query(Subreddit).order_by(Subreddit.id).all()
+
+    marketable_subreddits = (
+        db.session.query(VideoSubredditAssessment.subreddit_id, Subreddit.name)
+        .join(Subreddit, VideoSubredditAssessment.subreddit_id == Subreddit.id)
+        .filter(VideoSubredditAssessment.is_marketable == "yes")
+        .group_by(VideoSubredditAssessment.subreddit_id, Subreddit.name)
+        .order_by(VideoSubredditAssessment.subreddit_id)
+        .all()
+    )
+
+    total = len(marketable_subreddits)
+    total_batches = math.ceil(total / BATCH_SIZE)
+    batches = {}
+
+    for i in range(total_batches):
+        start = i * BATCH_SIZE
+        end = start + BATCH_SIZE
+        batches[str(i)] = [s.name for s in marketable_subreddits[start:end]]
+
+    snapshot = {
+        "batch_size": BATCH_SIZE,
+        "total_batches": total_batches,
+        "batches": batches,
+        "current_batch_index": 0,
+    }
+
+    BATCH_FILE.parent.mkdir(parents=True, exist_ok=True)
+    BATCH_FILE.write_text(json.dumps(snapshot, indent=2))
+    logger.info(
+        f"Saved {total_batches} batches ({BATCH_SIZE} per batch) to {BATCH_FILE}"
+    )
+
+    db.close()
 
 
 # ---------------- ASYNC WORKER ---------------- #
@@ -53,7 +102,9 @@ async def collect_subreddit_snapshot(name: str, limiter: AsyncRateLimiter, reddi
         await limiter.acquire()
         sub = await reddit.subreddit(sanitize_subreddit_name(name), fetch=True)
         collector = AsyncSubredditCollector(sub)
-        snapshot_data = await collector.collect_new_posts_snapshot()
+        snapshot_data = await collector.collect_new_posts_snapshot(
+            window_minutes=config.single_batch_wait_period
+        )
         return name, snapshot_data, None
     except Exception as e:
         return name, None, str(e)
@@ -63,8 +114,10 @@ async def process_batch_async(current_batch, db: DBManager):
     """
     Process a single subreddit batch concurrently, yielding results as each finishes.
     """
-    limiter = AsyncRateLimiter(max_calls=20, period=60)  # Adjust as per quota
-    semaphore = asyncio.Semaphore(5)  # Concurrency cap
+    limiter = AsyncRateLimiter(
+        max_calls=config.subreddit_batch_size, period=config.limiter_period_seconds
+    )  # Adjust as per quota
+    semaphore = asyncio.Semaphore(config.limiter_num_workers)  # Concurrency cap
 
     # Create a single shared reddit instance
     reddit = await get_reddit_instance_async()
@@ -159,5 +212,8 @@ def process_subreddit_snapshots():
 
 if __name__ == "__main__":
     with ExclusiveFileLock(LOCK_FILE.as_posix()):
+        if not BATCH_FILE.exists():
+            logger.info("Snapshot batch file does not exist")
+            generate_subreddit_batches()
         exit_code = process_subreddit_snapshots()
         sys.exit(exit_code)

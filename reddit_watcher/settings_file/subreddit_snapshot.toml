@@ -1,20 +1,32 @@
 [default]
-# Optional: Slack channel ID for notifications (falls back to yt_ingest_slack_channel_id if not provided)
 subreddit_snapshot_slack_channel_id = "C09RJJDCHBM"
 
-# Number of subreddits per batch for static batch generation
-subreddit_batch_size = 10
-
-# Path to store subreddit batch configuration JSON
+# batch generator params
 subreddit_batch_file = "@jinja {{this.base_data_path}}/subreddit_batches.json"
-
-# lock file to prevent race conditions on batch file
+subreddit_batch_size = 15
 subreddit_lock_file = "@jinja {{this.base_data_path}}/subreddit_batches.lock"
 
-# Pipeline metadata
-snapshot_pipeline_enabled = true
-snapshot_pipeline_name = "subreddit_snapshot_pipeline"
+# limiter params
+limiter_num_workers = 2 
+limiter_period_seconds = 100 # number of seconds in which a single batch completes
 
-# Logging and runtime
-log_level = "INFO"
-log_prefix = "[SubredditSnapshot]"
+# window period for meta collection
+single_batch_wait_period = 5
+
+[cron]
+# batch generator params
+subreddit_batch_file = "@jinja {{this.base_data_path}}/subreddit_batches_cron.json"
+subreddit_batch_size = 31
+subreddit_lock_file = "@jinja {{this.base_data_path}}/subreddit_batches_cron.lock"
+
+# limiter params
+limiter_num_workers = 4
+limiter_period_seconds = 180
+
+# window period for meta collection
+# num_batches = n, each batch takes 5 minutes, then the current batch will be 
+# procesed again after n*5 miutes, therefore single batch wait period = n*5 minutes
+# time taken by each batch is controlled by limiter_period_seconds, if this is 
+# reduced irresponsibly, we will hit api rate limits
+# current limit, 1 request per sec
+single_batch_wait_period = 10 # 2 batches currently mean each batch will run every 10 minutes

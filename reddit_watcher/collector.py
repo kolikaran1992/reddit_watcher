@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional
 from reddit_watcher.omniconf import config
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
+import asyncio
 
 
 class SubredditCollector:
@@ -169,17 +170,23 @@ class AsyncSubredditCollector:
             An asyncpraw subreddit object (already fetched).
         """
         self.sub = subreddit
-        self._cache = {}  # internal lightweight cache for reused data
+        self._cache = {}
 
     # ---------- UTILITIES ----------
 
     async def _get_cached(self, key: str, fetch_func) -> Any:
-        """Get attribute with temporary caching."""
-        if key not in self._cache:
-            try:
-                self._cache[key] = await fetch_func()
-            except Exception as e:
-                self._cache[key] = {"error": str(e)}
+        """Get attribute with temporary caching. Works for sync + async funcs."""
+        if key in self._cache:
+            return self._cache[key]
+
+        try:
+            result = fetch_func()  # may return coroutine or value
+            if asyncio.iscoroutine(result):
+                result = await result
+            self._cache[key] = result
+        except Exception as e:
+            self._cache[key] = {"error": str(e)}
+
         return self._cache[key]
 
     # ---------- MODEL 1: Subreddit (Static Metadata) ----------
@@ -203,6 +210,7 @@ class AsyncSubredditCollector:
             "description",
             lambda: self.sub.public_description or self.sub.description,
         )
+
         rules = await self._get_cached("rules", self._fetch_rules)
         flairs = await self._get_cached("flairs", self._fetch_flairs)
 
@@ -216,33 +224,84 @@ class AsyncSubredditCollector:
         }
 
     async def _fetch_rules(self) -> List[Dict[str, Any]]:
-        """Fetch subreddit rules asynchronously."""
+        """Fetch subreddit rules asynchronously (fixed, non-awaitable)."""
         try:
+            rules_obj = (
+                await self.sub.rules() if callable(self.sub.rules) else self.sub.rules
+            )
+            # asyncpraw SubredditRules supports iteration
             rules = []
-            async for rule in self.sub.rules():
+            async for rule in rules_obj:
                 rules.append(
                     {
-                        "short_name": rule.short_name,
-                        "description": rule.description,
-                        "kind": rule.kind,
+                        "short_name": getattr(rule, "short_name", None),
+                        "description": getattr(rule, "description", None),
+                        "kind": getattr(rule, "kind", None),
                     }
                 )
             return rules
+        except TypeError:
+            # Fallback if rules() is a direct iterable
+            try:
+                return [
+                    {
+                        "short_name": getattr(rule, "short_name", None),
+                        "description": getattr(rule, "description", None),
+                        "kind": getattr(rule, "kind", None),
+                    }
+                    async for rule in self.sub.rules
+                ]
+            except Exception as e:
+                return [{"error": str(e)}]
         except Exception as e:
             return [{"error": str(e)}]
 
     async def _fetch_flairs(self) -> List[Dict[str, Any]]:
-        """Fetch subreddit flairs asynchronously."""
+        """Fetch subreddit flairs asynchronously — final corrected version."""
         try:
             flairs = []
-            async for flair in self.sub.flair.link_templates():
+
+            # asyncpraw exposes link_templates as async iterable, not callable
+            async for flair in self.sub.flair.link_templates:
                 flairs.append(
                     {
                         "flair_text": flair.get("text"),
                         "flair_css_class": flair.get("css_class"),
+                        "flair_background_color": flair.get("background_color"),
+                        "flair_text_color": flair.get("text_color"),
                     }
                 )
+
             return flairs
+
+        except TypeError:
+            # fallback for older or experimental asyncpraw versions
+            try:
+                flair_iterable = getattr(self.sub.flair, "link_templates", None)
+                if flair_iterable is None:
+                    return []
+                # if it's a coroutine (rare), await it
+                if callable(flair_iterable):
+                    flair_list = await flair_iterable()
+                    return [
+                        {
+                            "flair_text": f.get("text"),
+                            "flair_css_class": f.get("css_class"),
+                        }
+                        for f in flair_list or []
+                    ]
+                # otherwise, it's iterable
+                else:
+                    return [
+                        {
+                            "flair_text": f.get("text"),
+                            "flair_css_class": f.get("css_class"),
+                        }
+                        async for f in flair_iterable
+                    ]
+            except Exception as e:
+                return [{"error": str(e)}]
+
         except Exception as e:
             return [{"error": str(e)}]
 
@@ -251,9 +310,7 @@ class AsyncSubredditCollector:
     async def collect_new_posts_snapshot(
         self, limit: int = 100, window_minutes: int = 5
     ) -> Dict[str, Any]:
-        """
-        Fetch subreddit activity snapshot for the last N minutes.
-        """
+        """Fetch subreddit activity snapshot for the last N minutes."""
         posts = []
         async for post in self.sub.new(limit=limit):
             posts.append(post)
@@ -281,13 +338,9 @@ class AsyncSubredditCollector:
         }
 
     async def collect_for_video_mapping(self) -> Dict[str, Any]:
-        """
-        Return subreddit data needed for video ingestion.
-        """
+        """Return subreddit data needed for video ingestion."""
         static_data = await self.collect_static()
         return static_data, {"subreddit_name": static_data["name"]}
-
-    # ---------- MAINTENANCE ----------
 
     def clear_cache(self):
         """Clear cached values (to force fresh API pulls next time)."""
