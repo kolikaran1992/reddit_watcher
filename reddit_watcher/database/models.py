@@ -146,3 +146,35 @@ class VideoSubredditAssessment(Base):
     __table_args__ = (
         UniqueConstraint("video_id", "subreddit_id", name="uq_video_sub_assessment"),
     )
+
+
+class VideoSubredditGeneratedPost(Base):
+    """
+    Stores finalized Reddit post generation output for a specific video–subreddit pair.
+    Created by the post-generation LLM (step_1_postgen).
+
+    This table represents the *final synthesized output* ready for submission,
+    including title, post body, and comment body in a structured form.
+    """
+
+    __tablename__ = "video_subreddit_generated_posts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    video_id = Column(String, nullable=False, index=True)
+    subreddit_id = Column(Integer, ForeignKey("subreddits.id"), nullable=False)
+
+    post_title = Column(String, nullable=False)
+    post_content = Column(Text, nullable=False)
+    comment_content = Column(Text, nullable=True)
+    requires_mod_approval = Column(String, nullable=False)
+
+    subreddit = relationship("Subreddit")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "video_id", "subreddit_id", name="uq_video_sub_generated_post"
+        ),
+    )
+
+    def __repr__(self):
+        return f"<VideoSubredditGeneratedPost(video_id={self.video_id}, subreddit_id={self.subreddit_id})>"

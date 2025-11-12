@@ -1,6 +1,6 @@
 from sqlalchemy import inspect
 from reddit_watcher.database.config import get_engine, get_session, Base
-from sqlalchemy import text
+from sqlalchemy import text, Table
 import pandas as pd
 
 
@@ -27,6 +27,26 @@ class DBManager:
         return inspector.get_table_names()
 
     # ---------- TABLE OPERATIONS ----------
+
+    def drop_table(self, model):
+        """
+        Drop a specific table corresponding to the given ORM model.
+
+        Parameters
+        ----------
+        model : Declarative model class
+            The SQLAlchemy ORM model class whose table should be dropped.
+        """
+        table_name = model.__tablename__
+        inspector = inspect(self.engine)
+
+        if table_name not in inspector.get_table_names():
+            print(f"⚠️ Table '{table_name}' does not exist.")
+            return
+
+        # Reflect the model's table metadata before dropping
+        model.__table__.drop(self.engine)
+        print(f"🗑️ Dropped table '{table_name}' successfully.")
 
     def insert_record(self, record):
         """Insert a new record (ORM object)."""
