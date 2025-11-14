@@ -337,6 +337,37 @@ class AsyncSubredditCollector:
             "top_post_score_in_window": top_post_score,
         }
 
+    async def collect_hot_posts_metadata(self, limit: int = 25) -> List[Dict[str, Any]]:
+        """
+        Fetch the hottest posts metadata for the subreddit.
+
+        Parameters
+        ----------
+        limit : int
+            Maximum number of hot posts to fetch (default=25).
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            A list of post metadata dictionaries ready for DB insertion.
+        """
+        hot_posts_data = []
+        async for post in self.sub.hot(limit=limit):
+            # Check for deleted/removed posts before extracting data
+            if not getattr(post, 'author', None):
+                continue
+            
+            hot_posts_data.append({
+                "post_id": post.id,
+                # post.url can be either a link or the permalink to the comments
+                "post_url": post.url, 
+                "post_title": post.title,
+                # Use selftext for description. If not present, use a blank string.
+                "post_description": post.selftext or "", 
+            })
+            
+        return hot_posts_data
+
     async def collect_for_video_mapping(self) -> Dict[str, Any]:
         """Return subreddit data needed for video ingestion."""
         static_data = await self.collect_static()

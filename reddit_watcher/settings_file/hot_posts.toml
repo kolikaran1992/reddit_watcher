@@ -1,0 +1,22 @@
+# Configuration for the Hot Posts ingestion pipeline
+
+[default]
+hot_posts_batch_file = "@jinja {{this.base_data_path}}/hot_posts_batch.json"
+hot_posts_batch_size = 2
+hot_posts_fetch_limit = 50
+hot_posts_lock_file = "@jinja {{this.base_data_path}}/hot_posts_pipeline.lock"
+
+# Reusing existing rate limit settings for now
+hot_posts_limiter_num_workers = 5
+hot_posts_limiter_period_seconds = 60
+
+# Slack channel ID for notifications
+hot_posts_slack_channel_id = "C09RJJDCHBM"
+
+[cron]
+hot_posts_batch_file = "@jinja {{this.base_data_path}}/hot_posts_batch_cron.json"
+hot_posts_batch_size = 30
+hot_posts_fetch_limit = 50
+hot_posts_limiter_num_workers = 5
+hot_posts_limiter_period_seconds = 9000
+hot_posts_lock_file = "@jinja {{this.base_data_path}}/hot_posts_pipeline_cron.lock"

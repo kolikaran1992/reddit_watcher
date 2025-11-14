@@ -22,11 +22,6 @@ def now():
 
 
 class Subreddit(Base):
-    """
-    Core static metadata for a subreddit.
-    Populated by SubredditCollector.collect_static().
-    """
-
     __tablename__ = "subreddits"
 
     id = Column(Integer, primary_key=True)
@@ -42,6 +37,11 @@ class Subreddit(Base):
         "SubredditTopNewPostsSnapshot", back_populates="subreddit"
     )
     video_mappings = relationship("VideoSubredditMap", back_populates="subreddit")
+
+    post_generation_rules = relationship(
+        "SubredditPostGenerationRules",
+        back_populates="subreddit",
+    )
 
 
 class SubredditMeta(Base):
@@ -63,6 +63,22 @@ class SubredditMeta(Base):
     updated_at = Column(DateTime, default=now)
 
     subreddit = relationship("Subreddit", back_populates="meta")
+
+
+class SubredditPostGenerationRules(Base):
+    """
+    Data model for storing generation rules extracted from analysing
+    hot posts of a subreddit
+    """
+
+    __tablename__ = "subreddit_post_generation_rules"
+
+    id = Column(Integer, primary_key=True)
+    subreddit_id = Column(Integer, ForeignKey("subreddits.id"))
+    post_generation_rules = Column(Text)
+    updated_at = Column(DateTime, default=now)
+
+    subreddit = relationship("Subreddit", back_populates="post_generation_rules")
 
 
 class SubredditTopNewPostsSnapshot(Base):
@@ -168,6 +184,9 @@ class VideoSubredditGeneratedPost(Base):
     comment_content = Column(Text, nullable=True)
     requires_mod_approval = Column(String, nullable=False)
 
+    upload_video_directly = Column(String(10), nullable=False, default="no")
+    upload_photo_directly = Column(String(10), nullable=False, default="no")
+
     subreddit = relationship("Subreddit")
 
     __table_args__ = (
@@ -178,3 +197,30 @@ class VideoSubredditGeneratedPost(Base):
 
     def __repr__(self):
         return f"<VideoSubredditGeneratedPost(video_id={self.video_id}, subreddit_id={self.subreddit_id})>"
+
+
+class SubredditPost(Base):
+    """
+    Stores post metadata
+    """
+
+    __tablename__ = "subreddit_post"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    subreddit_id = Column(
+        Integer,
+        ForeignKey(Subreddit.id),
+        nullable=False,
+        index=True,
+    )
+    post_id = Column(String(10), unique=True, nullable=False, index=True)
+    post_url = Column(String(512), nullable=False)
+    post_title = Column(String(512), nullable=False)
+    # Use Text for description in case it's long
+    post_description = Column(Text)
+
+    # Optional relationship for easy joining
+    subreddit = relationship("Subreddit")
+
+    def __repr__(self):
+        return f"<SubredditPost(id={self.id}, post_id='{self.post_id}', subreddit_id={self.subreddit_id})>"
