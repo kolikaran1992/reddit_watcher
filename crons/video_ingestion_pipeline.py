@@ -6,7 +6,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from reddit_watcher.reddit_api import get_reddit_instance
 from reddit_watcher.database.manager import DBManager
-from reddit_watcher.database.models import Subreddit, VideoSubredditMap
+from reddit_watcher.database.models import (
+    Subreddit,
+    VideoSubredditMap,
+    ProcessedVideoRegistry,
+)
 from reddit_watcher.collector import SubredditCollector
 from reddit_watcher.omniconf import config, logger
 from reddit_watcher.xml_parser import SimpleXMLParser
@@ -96,8 +100,12 @@ def load_unprocessed_videos(base_dir: Path, db: DBManager) -> list[Path]:
     unprocessed = []
     for p in paths:
         video_id = p.stem  # filename = video_id
+        if video_id not in ["RQdlvt2_lk4"]:
+            continue
         exists = (
-            db.session.query(VideoSubredditMap).filter_by(video_id=video_id).first()
+            db.session.query(ProcessedVideoRegistry)
+            .filter_by(video_id=video_id)
+            .first()
         )
         if not exists:
             unprocessed.append(p)
@@ -193,7 +201,7 @@ def process_new_videos():
                 else:
                     sub_id = existing_sub.id
 
-                # Insert VideoSubredditMap
+                # Insert VideoSubredditMap with duplicate guard
                 mapping_data = video_data
                 mapping = VideoSubredditMap(
                     video_id=video_id,
@@ -201,7 +209,23 @@ def process_new_videos():
                     subreddit_name=mapping_data["subreddit_name"],
                     keywords_json=keywords,
                 )
-                db.insert_record(mapping)
+                exists = (
+                    db.session.query(VideoSubredditMap)
+                    .filter_by(video_id=video_id, subreddit_id=sub_id)
+                    .first()
+                )
+                if exists:
+                    logger.info(f"Skipping duplicate mapping for {video_id} → {mapping_data['subreddit_name']}")
+                else:
+                    db.insert_record(mapping)
+
+
+
+            # Insert registry record once per video after processing all subreddits
+            try:
+                db.insert_record(ProcessedVideoRegistry(video_id=video_id))
+            except Exception:
+                logger.exception(f"Failed to insert into ProcessedVideoRegistry for {video_id}")
 
             successful += 1
             logger.info(f"✅ Ingested {len(subs)} mappings for video {video_id}")

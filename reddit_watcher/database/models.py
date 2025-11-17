@@ -1,5 +1,6 @@
 from sqlalchemy import (
     Column,
+    ForeignKeyConstraint,
     Integer,
     String,
     Text,
@@ -199,6 +200,18 @@ class VideoSubredditGeneratedPost(Base):
         return f"<VideoSubredditGeneratedPost(video_id={self.video_id}, subreddit_id={self.subreddit_id})>"
 
 
+class ProcessedVideoRegistry(Base):
+    """
+    Registry table for all processed videos.
+    Used for duplicate-checking in video ingestion pipeline.
+    """
+
+    __tablename__ = "processed_video_registry"
+
+    video_id = Column(String, primary_key=True, index=True)
+    created_at = Column(DateTime, default=now)
+
+
 class SubredditPost(Base):
     """
     Stores post metadata
@@ -224,3 +237,61 @@ class SubredditPost(Base):
 
     def __repr__(self):
         return f"<SubredditPost(id={self.id}, post_id='{self.post_id}', subreddit_id={self.subreddit_id})>"
+
+
+######################
+# Mom Slack App Models
+######################
+class PostMeta(Base):
+    """
+    Minimal Reddit post metadata.
+    - Sub list is in config, not here.
+    """
+
+    __tablename__ = "mom_post_meta"
+
+    id = Column(Integer, primary_key=True)
+    subreddit = Column(String(255), nullable=False)
+    reddit_post_id = Column(String(32), nullable=False)  # e.g. 'abc123'
+    reddit_url = Column(String(500), nullable=False)
+
+    first_seen_at = Column(DateTime, default=now)
+
+    __table_args__ = (
+        UniqueConstraint("subreddit", "reddit_post_id", name="uq_sub_post"),
+    )
+
+    comments = relationship("SlackComment", back_populates="mom_post_meta")
+
+
+class SlackComment(Base):
+    """
+    One row per mom-comment on Slack.
+    Multiple comments per post allowed.
+    """
+
+    __tablename__ = "mom_slack_comments"
+
+    id = Column(Integer, primary_key=True)
+
+    # Composite FK to PostMeta
+    subreddit = Column(String(255), nullable=False)
+    reddit_post_id = Column(String(32), nullable=False)
+
+    comment_text = Column(Text, nullable=False)
+
+    slack_ts = Column(String(64), nullable=False)  # Slack message ts
+    slack_channel = Column(String(255), nullable=False)
+    slack_user = Column(String(255), nullable=True)  # for sanity check it's mom
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["subreddit", "reddit_post_id"],
+            ["post_meta.subreddit", "post_meta.reddit_post_id"],
+            name="fk_comment_post",
+        ),
+    )
+
+    post = relationship("PostMeta", back_populates="mom_slack_comments")

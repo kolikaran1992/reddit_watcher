@@ -52,7 +52,7 @@ class DBManager:
         """Insert a new record (ORM object)."""
         self.session.add(record)
         self.session.commit()
-        print(f"✅ Inserted record into {record.__tablename__} (ID: {record.id})")
+        print(f"✅ Inserted record into {record.__tablename__}")
 
     def delete_record(self, model, record_id):
         """Delete a record by primary key."""
