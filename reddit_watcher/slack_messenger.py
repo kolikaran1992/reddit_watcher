@@ -47,16 +47,9 @@ def send_slack_message(
     header: str,
     slack_bot_token: str = config.slack.bot_token,
     slack_channel_id: str = config.slack.channel_id,
+    metadata: dict = {},
+    blocks: list = None,  # NEW
 ) -> None:
-    """
-    Sends a structured notification message to the Slack channel configured in config.
-
-    Args:
-        title (str): Title of the message.
-        status (str): Status string, e.g., "CRITICAL ALERT" or "CRON RUN COMPLETE".
-        details (str): Detailed description or log of the event.
-        job_id (str): Optional job identifier.
-    """
 
     if not slack_bot_token or not slack_channel_id:
         logger.info(
@@ -68,10 +61,18 @@ def send_slack_message(
         "Authorization": f"Bearer {slack_bot_token}",
         "Content-Type": "application/json",
     }
+
     payload = {
         "channel": slack_channel_id,
-        "text": format_message_in_box(message, header),
+        "metadata": metadata,
+        "text": message,  # fallback for notifications
     }
+
+    if blocks:
+        payload["blocks"] = blocks
+    else:
+        # fallback to your old formatting
+        payload["text"] = format_message_in_box(message, header)
 
     try:
         response = requests.post(

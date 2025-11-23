@@ -231,6 +231,16 @@ class SubredditPost(Base):
     post_title = Column(String(512), nullable=False)
     # Use Text for description in case it's long
     post_description = Column(Text)
+    post_media_urls = Column(JSON, nullable=False)
+    post_created_utc = Column(Integer, nullable=False)
+    post_score = Column(Float, nullable=True)
+    post_num_comments = Column(Integer, nullable=True)
+    # post_is_self = Column(Integer, nullable=True)
+    post_author = Column(String(200), nullable=False)
+
+    post_subreddit_name = Column(String(100), nullable=False)
+    post_subreddit_permalink = Column(String(200), nullable=False)
+    post_op_first_comment = Column(Text)
 
     # Optional relationship for easy joining
     subreddit = relationship("Subreddit")
@@ -239,59 +249,58 @@ class SubredditPost(Base):
         return f"<SubredditPost(id={self.id}, post_id='{self.post_id}', subreddit_id={self.subreddit_id})>"
 
 
-######################
-# Mom Slack App Models
-######################
-class PostMeta(Base):
+class SlackThreadComment(Base):
+    __tablename__ = "slack_thread_comments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    subreddit_id = Column(Integer, nullable=False)
+    post_id = Column(String(10), nullable=False)
+    user_id = Column(String(50), nullable=False)
+    user_name = Column(String(50), nullable=True)
+    comment_text = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=now, nullable=False)
+
+    event_id = Column(String(80), nullable=False, unique=True)
+
+    slack_ts = Column(DateTime, nullable=False)
+
+
+class ProcessedSubredditPost(Base):
     """
-    Minimal Reddit post metadata.
-    - Sub list is in config, not here.
+    Tracks which SubredditPost entries have already been processed by the
+    hinglish conversion and send to slack pipeline
     """
 
-    __tablename__ = "mom_post_meta"
+    __tablename__ = "processed_subreddit_posts"
 
-    id = Column(Integer, primary_key=True)
-    subreddit = Column(String(255), nullable=False)
-    reddit_post_id = Column(String(32), nullable=False)  # e.g. 'abc123'
-    reddit_url = Column(String(500), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
 
-    first_seen_at = Column(DateTime, default=now)
-
-    __table_args__ = (
-        UniqueConstraint("subreddit", "reddit_post_id", name="uq_sub_post"),
+    subreddit_id = Column(
+        Integer,
+        ForeignKey("subreddits.id"),
+        nullable=False,
+        index=True,
     )
 
-    comments = relationship("SlackComment", back_populates="mom_post_meta")
+    post_id = Column(
+        String(10),
+        ForeignKey("subreddit_post.post_id"),
+        nullable=False,
+        index=True,
+    )
 
+    processed_at = Column(DateTime, default=now, nullable=False)
 
-class SlackComment(Base):
-    """
-    One row per mom-comment on Slack.
-    Multiple comments per post allowed.
-    """
-
-    __tablename__ = "mom_slack_comments"
-
-    id = Column(Integer, primary_key=True)
-
-    # Composite FK to PostMeta
-    subreddit = Column(String(255), nullable=False)
-    reddit_post_id = Column(String(32), nullable=False)
-
-    comment_text = Column(Text, nullable=False)
-
-    slack_ts = Column(String(64), nullable=False)  # Slack message ts
-    slack_channel = Column(String(255), nullable=False)
-    slack_user = Column(String(255), nullable=True)  # for sanity check it's mom
-
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # Relationship back to SubredditPost
+    post = relationship("SubredditPost", backref="processing_record")
 
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["subreddit", "reddit_post_id"],
-            ["post_meta.subreddit", "post_meta.reddit_post_id"],
-            name="fk_comment_post",
+        UniqueConstraint(
+            "subreddit_id",
+            "post_id",
+            name="uq_processed_subreddit_post",
         ),
     )
 
-    post = relationship("PostMeta", back_populates="mom_slack_comments")
+    def __repr__(self):
+        return f"<ProcessedSubredditPost(subreddit_id={self.subreddit_id}, post_id='{self.post_id}')>"

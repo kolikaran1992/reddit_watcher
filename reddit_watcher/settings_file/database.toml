@@ -1,5 +1,6 @@
 [default]
 DB_FILE = '@jinja {{this.base_data_path}}/local_database.db'
+MODEL_TO_DICT_DIR = '@jinja {{this.base_data_path}}/data_models'
 
 [test]
 DB_FILE = '@jinja {{this.base_data_path}}/local_database__test.db'

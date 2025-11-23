@@ -12,6 +12,9 @@ dependencies = [
   "pandas (>=2.3.3,<3.0.0)",
   "meter-call @ git+ssh://git@github.com/kolikaran1992/meter_call.git",
   "asyncpraw (>=7.8.1,<8.0.0)",
+  "slack-bolt (>=1.27.0,<2.0.0)",
+  "slack-sdk (>=3.38.0,<4.0.0)",
+  "fastapi (>=0.121.2,<0.122.0)",
 ]
 description = ""
 name = "reddit-watcher"

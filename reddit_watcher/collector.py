@@ -6,6 +6,142 @@ from typing import Any, Dict, List
 import asyncio
 
 
+import json
+import re
+
+YOUTUBE_REGEX = re.compile(
+    r"(https?://(?:www\.)?(?:youtube\.com/watch\?v=[A-Za-z0-9_-]+|youtu\.be/[A-Za-z0-9_-]+))"
+)
+URL_REGEX = re.compile(r"(https?://[^\s)]+)")
+
+
+def extract_media_urls(post):
+    """
+    Safest and most complete media extractor for Reddit posts.
+    Returns *all* media URLs:
+      - Galleries
+      - Reddit-hosted videos
+      - Reddit images
+      - External videos (YT, Vimeo, Streamable, Instagram, etc.)
+      - Links inside selftext
+      - Link posts
+    """
+
+    final_urls = set()
+
+    # ------------------------------------------------------------
+    # 0. Helper: normalize HTML-escaped URLs (&amp;)
+    # ------------------------------------------------------------
+    def clean(url):
+        return url.replace("&amp;", "&")
+
+    # ------------------------------------------------------------
+    # 1. Galleries (multiple images)
+    # ------------------------------------------------------------
+    if getattr(post, "is_gallery", False) and post.media_metadata:
+        for item in post.media_metadata.values():
+            if item.get("status") != "valid":
+                continue
+            if "s" in item and "u" in item["s"]:
+                final_urls.add(clean(item["s"]["u"]))
+
+    # ------------------------------------------------------------
+    # 2. Reddit-hosted videos (v.redd.it)
+    # ------------------------------------------------------------
+    if getattr(post, "media", None):
+        rv = post.media.get("reddit_video") if post.media else None
+        if rv:
+            if rv.get("fallback_url"):
+                final_urls.add(clean(rv["fallback_url"]))
+
+            # Optional audio track (if needed)
+            if rv.get("dash_url"):
+                final_urls.add(clean(rv["dash_url"]))
+
+    # ------------------------------------------------------------
+    # 3. Preview images (non-gallery posts)
+    # ------------------------------------------------------------
+    # if getattr(post, "preview", None):
+    #     for img in post.preview.get("images", []):
+    #         source = img.get("source", {})
+    #         if "url" in source:
+    #             final_urls.add(clean(source["url"]))
+
+    # ------------------------------------------------------------
+    # 4. Link post: external video/img/etc.
+    # ------------------------------------------------------------
+    if post.url:
+        ext = post.url.lower()
+        # Raw direct media
+        if any(
+            ext.endswith(x)
+            for x in [".mp4", ".mov", ".webm", ".gif", ".png", ".jpg", ".jpeg"]
+        ):
+            final_urls.add(clean(post.url))
+        else:
+            # Could be YouTube, Vimeo, Streamable, etc.
+            final_urls.add(clean(post.url))
+
+    # ------------------------------------------------------------
+    # 5. Extract links inside selftext (YouTube etc.)
+    # ------------------------------------------------------------
+    if post.selftext:
+        for url in URL_REGEX.findall(post.selftext):
+            final_urls.add(clean(url))
+
+    # ------------------------------------------------------------
+    # 6. Crossposts (often contain original media)
+    # ------------------------------------------------------------
+    if getattr(post, "crosspost_parent_list", None):
+        for parent in post.crosspost_parent_list:
+            # parent media metadata is structured like a post
+            if "media_metadata" in parent:
+                for item in parent["media_metadata"].values():
+                    if item.get("status") == "valid":
+                        if "s" in item and "u" in item["s"]:
+                            final_urls.add(clean(item["s"]["u"]))
+
+            # parent preview
+            # if "preview" in parent:
+            #     for img in parent["preview"].get("images", []):
+            #         src = img.get("source", {})
+            #         if "url" in src:
+            #             final_urls.add(clean(src["url"]))
+
+            # parent reddit video
+            if "media" in parent and parent["media"]:
+                pv = parent["media"].get("reddit_video")
+                if pv and pv.get("fallback_url"):
+                    final_urls.add(clean(pv["fallback_url"]))
+
+            # parent link
+            if parent.get("url"):
+                final_urls.add(clean(parent["url"]))
+
+    # ------------------------------------------------------------
+    # Return sorted list for determinism
+    # ------------------------------------------------------------
+    return sorted(list(final_urls))
+
+
+def get_op_first_comment(post):
+    """Return the first top-level comment made by the post author."""
+    try:
+        # Load  **only top-level** comments, avoid deep trees
+        post.comments.replace_more(limit=0)
+
+        author_name = str(post.author) if post.author else None
+        if not author_name:
+            return None
+
+        for c in post.comments:
+            if str(c.author) == author_name:
+                return c.body or ""
+        return None
+    except Exception:
+        return None
+
+
 class SubredditCollector:
     """Efficient modular collector for a given PRAW Subreddit object."""
 
@@ -339,7 +475,8 @@ class AsyncSubredditCollector:
 
     async def collect_hot_posts_metadata(self, limit: int = 25) -> List[Dict[str, Any]]:
         """
-        Fetch the hottest posts metadata for the subreddit.
+        Fetch the hottest posts metadata for the subreddit, including extended
+        fields useful for Slack rendering and downstream mapping.
 
         Parameters
         ----------
@@ -349,24 +486,114 @@ class AsyncSubredditCollector:
         Returns
         -------
         List[Dict[str, Any]]
-            A list of post metadata dictionaries ready for DB insertion.
+            A list of post metadata dictionaries ready for DB insertion and Slack delivery.
         """
         hot_posts_data = []
+
         async for post in self.sub.hot(limit=limit):
-            # Check for deleted/removed posts before extracting data
-            if not getattr(post, 'author', None):
+            # Skip deleted/removed posts
+            if not getattr(post, "author", None):
                 continue
-            
-            hot_posts_data.append({
-                "post_id": post.id,
-                # post.url can be either a link or the permalink to the comments
-                "post_url": post.url, 
-                "post_title": post.title,
-                # Use selftext for description. If not present, use a blank string.
-                "post_description": post.selftext or "", 
-            })
-            
+
+            # Extract media URLs
+            # media_urls = []
+            # try:
+            #     if hasattr(post, "preview") and post.preview:
+            #         images = post.preview.get("images", [])
+            #         for img in images:
+            #             source = img.get("source")
+            #             if source and source.get("url"):
+            #                 media_urls.append(source["url"].replace("&amp;", "&"))
+            # except Exception:
+            #     pass
+
+            # try:
+            #     if hasattr(post, "media") and post.media:
+            #         reddit_video = post.media.get("reddit_video")
+            #         if reddit_video and reddit_video.get("fallback_url"):
+            #             media_urls.append(reddit_video["fallback_url"])
+            # except Exception:
+            #     pass
+
+            media_urls = extract_media_urls(post)
+
+            hot_posts_data.append(
+                {
+                    "post_id": post.id,
+                    "post_url": post.url,
+                    "post_title": post.title,
+                    "post_description": post.selftext or "",
+                    "post_media_urls": media_urls,
+                    "post_created_utc": post.created_utc,
+                    "post_score": getattr(post, "score", None),
+                    "post_num_comments": getattr(post, "num_comments", None),
+                    # "post_is_self": getattr(post, "is_self", None),
+                    "post_author": str(post.author) if post.author else None,
+                    # NEW FIELDS
+                    "post_subreddit_name": str(post.subreddit.display_name),
+                    "post_subreddit_permalink": f"https://www.reddit.com/r/{post.subreddit.display_name}/comments/{post.id}/",
+                    "post_op_first_comment": get_op_first_comment(post),
+                }
+            )
+
         return hot_posts_data
+
+    async def fetch_post_top_comments(
+        self, post, limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch the top N comments for a specific post.
+
+        Parameters
+        ----------
+        post : asyncpraw.models.Submission
+            The asyncpraw Submission object for the post.
+        limit : int
+            The maximum number of top comments to fetch (default=50).
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            A list of comment metadata dictionaries.
+        """
+        comments_data = []
+        try:
+            # Explicitly set the comment sort to 'top' for certainty.
+            post.comment_sort = "top"
+            # Asynchronously load top-level comments and skip loading 'more' links for efficiency.
+            await post.comments.replace_more(limit=0)
+
+            # Iterate through the resulting comments, which are now top-level comments (sorted by 'top')
+            for comment in post.comments.list():
+                if len(comments_data) >= limit:
+                    break
+
+                # Skip deleted/removed comments
+                if not getattr(comment, "author", None):
+                    continue
+
+                comments_data.append(
+                    {
+                        "comment_id": comment.id,
+                        "author": (
+                            str(comment.author) if comment.author else "[deleted]"
+                        ),
+                        "body": comment.body,
+                        "score": getattr(comment, "score", 0),
+                        "created_utc": comment.created_utc,
+                        "permalink": comment.permalink,
+                        # Enhanced fields for analysis
+                        "is_op": comment.is_submitter,
+                        "parent_id": getattr(comment, "parent_id", None),
+                        "distinguished": getattr(comment, "distinguished", None),
+                        "is_locked": getattr(comment, "locked", False),
+                    }
+                )
+
+            return comments_data
+
+        except Exception as e:
+            return [{"error": f"Failed to fetch comments: {e}"}]
 
     async def collect_for_video_mapping(self) -> Dict[str, Any]:
         """Return subreddit data needed for video ingestion."""
